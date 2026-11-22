@@ -18,3 +18,17 @@ target/
 gen/
 .vs/
 *.user
+
+# Local files outside the widget repo
+/DESIGN.md
+/.nojekyll
+/assets/
+/icons/
+/DynamicIslandTauri/
+/about.html
+/contact.html
+/index.html
+/projects.html
+/skills.html
+/styles.css
+/transitions.js
