@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <title>About</title>
+  <meta name="description" content="About page placeholder for the personal site starter template." />
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23061b4d'/%3E%3Cpath d='M6 23 L26 9 L26 15 L6 29 Z' fill='%23ffffff'/%3E%3C/svg%3E" />
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      root.className += ' js';
+      try {
+        if (window.sessionStorage.getItem('p3t-transition') === '1') {
+          root.className += ' wipe-enter';
+          window.sessionStorage.removeItem('p3t-transition');
+        }
+        if (window.sessionStorage.getItem('p3t-motion-preview') === '1') {
+          root.className += ' motion-preview';
+        }
+      } catch (error) {
+        /* Storage can be blocked. The page still loads. */
+      }
+    })();
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shrikhand&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="transitions.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to menu</a>
+
+  <div class="page-wipe" aria-hidden="true">
+    <span class="page-wipe__panel page-wipe__panel--1"></span>
+    <span class="page-wipe__panel page-wipe__panel--2"></span>
+    <span class="page-wipe__panel page-wipe__panel--3"></span>
+  </div>
+
+  <header class="site-head">
+    <span class="sr-only">Personal website starter</span>
+  </header>
+
+  <main class="hero" id="main">
+    <h1 class="sr-only">About page</h1>
+
+    <div class="waves" aria-hidden="true">
+      <svg viewBox="0 0 900 900" preserveAspectRatio="xMidYMid slice" focusable="false">
+        <path class="wave--royal-soft" d="M-60 690 C110 560 230 640 380 520 C540 390 690 450 960 280 L960 960 L-60 960 Z" />
+        <path class="wave--royal" d="M-60 800 C140 670 300 750 470 610 C640 470 790 520 960 380 L960 960 L-60 960 Z" />
+        <path class="wave--navy" d="M80 900 C240 760 390 820 540 690 C680 565 820 600 960 480 L960 960 L80 960 Z" />
+        <path class="wave--sky" d="M-60 220 C120 120 280 270 470 150 C640 45 790 130 960 30 L960 -60 L-60 -60 Z" />
+        <path class="wave--line-royal" d="M-40 300 C130 185 285 330 470 210 C640 100 800 190 960 90" />
+        <path class="wave--line-sky" d="M-40 370 C140 255 300 400 480 280 C650 165 810 255 960 160" />
+        <path class="wave--line-navy" d="M-40 440 C140 325 300 470 480 350 C650 235 810 325 960 230" />
+        <path class="wave--line-royal" d="M-40 510 C140 395 300 540 480 420 C650 305 810 395 960 300" />
+        <path class="wave--line-sky" d="M-40 580 C140 465 300 610 480 490 C650 375 810 465 960 370" />
+      </svg>
+    </div>
+
+    <div class="hero__figure">
+      <div class="hero__layers" aria-hidden="true">
+        <div class="hero__layer hero__layer--body">
+          <img class="hero__image" src="assets/hero-body.png" alt="" width="896" height="1037" fetchpriority="high" decoding="async" />
+        </div>
+        <div class="hero__layer hero__layer--head">
+          <img class="hero__image" src="assets/hero-head.png" alt="" width="896" height="1037" fetchpriority="high" decoding="async" />
+        </div>
+      </div>
+      <img class="hero__fallback" src="assets/hero.png" alt="" width="896" height="1037" fetchpriority="high" decoding="async" />
+    </div>
+
+    <nav class="menu" aria-label="Main menu">
+      <p class="sr-only">Use Tab or the arrow keys to move through the menu.</p>
+      <p class="menu__label" aria-hidden="true">Menu / Select</p>
+      <ul class="menu__list">
+        <li>
+          <a class="menu__link is-selected" style="--i: 0" href="about.html" aria-current="page" data-transition>
+            <span class="menu__shape" aria-hidden="true"></span>ABOUT
+          </a>
+        </li>
+        <li>
+          <a class="menu__link" style="--i: 1" href="projects.html" data-transition>
+            <span class="menu__shape" aria-hidden="true"></span>PROJECTS
+          </a>
+        </li>
+        <li>
+          <a class="menu__link" style="--i: 2" href="skills.html" data-transition>
+            <span class="menu__shape" aria-hidden="true"></span>SKILLS
+          </a>
+        </li>
+        <li>
+          <a class="menu__link" style="--i: 3" href="contact.html" data-transition>
+            <span class="menu__shape" aria-hidden="true"></span>CONTACT
+          </a>
+        </li>
+      </ul>
+      <p class="page-note">Template page. Replace this with your own introduction.</p>
+    </nav>
+  </main>
+
+  <footer class="foot">
+    <span>Starter template</span>
+    <button class="motion-toggle" type="button" aria-pressed="false">Motion: Off</button>
+  </footer>
+</body>
+</html>

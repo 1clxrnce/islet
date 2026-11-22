@@ -1,0 +1,20 @@
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Local tooling (not part of the static site)
+.opencode/
+AGENTS.md
+
+# Optional local/dev folders
+node_modules/
+dist/
+
+# Build output
+bin/
+obj/
+target/
+gen/
+.vs/
+*.user

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dynamic Island Music</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="sr-only">
+    <h1>Dynamic Island Music</h1>
+  </header>
+
+  <main id="island" class="island" aria-label="Music player">
+    <div class="glow" aria-hidden="true"></div>
+
+    <div id="pill" class="pill">
+      <div id="shape" class="shape" aria-hidden="true"></div>
+
+      <div id="compact" class="compact">
+        <img id="compactArt" class="thumb" width="44" height="44" alt="" title="Demo album art">
+        <div class="bars" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div id="details" class="details" aria-hidden="true">
+        <div class="art-stack detail-item" style="--i: 0">
+          <img id="artA" class="art front" width="84" height="84" alt="Demo album art">
+          <img id="artB" class="art" width="84" height="84" alt="">
+        </div>
+
+        <div class="meta detail-item" style="--i: 1">
+          <div class="title-mask">
+            <div id="title" class="title">Nightshift</div>
+          </div>
+          <div id="artist" class="artist">Paper Lanterns</div>
+          <div class="track" aria-hidden="true">
+            <div id="progressFill" class="track-fill"></div>
+          </div>
+          <div class="times">
+            <span id="elapsed">0:00</span>
+            <span id="total">0:00</span>
+          </div>
+        </div>
+
+        <!-- Transport glyphs are the standard media shapes; each button carries its own label. -->
+        <div class="controls detail-item" style="--i: 2">
+          <button id="prev" type="button" aria-label="Previous track" title="Previous track">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zm3.5 7L19 5v14z"/></svg>
+          </button>
+          <button id="toggle" type="button" aria-label="Pause" title="Pause">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/></svg>
+          </button>
+          <button id="next" type="button" aria-label="Next track" title="Next track">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM5 5l9.5 7L5 19z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="fps" class="fps" hidden aria-hidden="true">60 fps</div>
+
+  <footer class="sr-only">Stage 1 demo with fake track data.</footer>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
