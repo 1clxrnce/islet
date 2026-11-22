@@ -133,9 +133,9 @@ public partial class MainWindow : Window
         _syncTimer.Tick += (_, _) => _vm.SyncTimeline();
 
         Pill.SizeChanged += (_, _) => UpdateShape();
-        GlowPath.HorizontalAlignment = ShadowPath.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
-        GlowPath.VerticalAlignment = ShadowPath.VerticalAlignment = System.Windows.VerticalAlignment.Top;
-        GlowPath.Margin = ShadowPath.Margin = new Thickness(0, 9, 0, 0);
+        GlowPath.HorizontalAlignment = ShadowWide.HorizontalAlignment = ShadowPath.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
+        GlowPath.VerticalAlignment = ShadowWide.VerticalAlignment = ShadowPath.VerticalAlignment = System.Windows.VerticalAlignment.Top;
+        GlowPath.Margin = ShadowWide.Margin = ShadowPath.Margin = new Thickness(0, 9, 0, 0);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -338,7 +338,7 @@ public partial class MainWindow : Window
             ctx.Close();
         }
         geo.Freeze();
-        foreach (var path in new[] { GlowPath, ShadowPath, BodyPath, EdgePath })
+        foreach (var path in new[] { ShadowWide, GlowPath, ShadowPath, BodyPath, EdgePath })
         {
             path.Data = geo;
             path.Width = w;
@@ -468,24 +468,24 @@ public partial class MainWindow : Window
 
         double width = target switch
         {
-            IslandState.Compact or IslandState.Hidden => 220,
-            IslandState.Peek => 320,
-            _ => 400
+            IslandState.Compact or IslandState.Hidden => 264,
+            IslandState.Peek => 356,
+            _ => 448
         };
         double height = target switch
         {
-            IslandState.Compact or IslandState.Hidden => 36,
-            IslandState.Peek => 56,
-            _ => 150
+            IslandState.Compact or IslandState.Hidden => 44,
+            IslandState.Peek => 64,
+            _ => 170
         };
 
-        int ms = immediate ? 0 : 420;
-        var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.18 };
+        int ms = immediate ? 0 : 480;
+        var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.1 };
 
         var sb = new Storyboard();
         AddDouble(sb, Pill, "Width", Pill.Width, width, ms, 0, spring);
         AddDouble(sb, Pill, "Height", Pill.Height, height, ms, 0, spring);
-        foreach (var path in new[] { GlowPath, ShadowPath, BodyPath, EdgePath })
+        foreach (var path in new[] { ShadowWide, GlowPath, ShadowPath, BodyPath, EdgePath })
         {
             AddDouble(sb, path, "Width", path.Width, width, ms, 0, spring);
             AddDouble(sb, path, "Height", path.Height, height, ms, 0, spring);
@@ -514,7 +514,8 @@ public partial class MainWindow : Window
     private static void SetLayer(UIElement layer, bool visible)
     {
         layer.BeginAnimation(UIElement.OpacityProperty,
-            new DoubleAnimation(visible ? 1 : 0, TimeSpan.FromMilliseconds(160)));
+            new DoubleAnimation(visible ? 1 : 0, TimeSpan.FromMilliseconds(240))
+            { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
     }
 
     private new void Hide() => Show(IslandState.Hidden);

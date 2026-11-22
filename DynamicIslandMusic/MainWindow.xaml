@@ -8,7 +8,7 @@
         Topmost="True"
         ShowInTaskbar="False"
         ResizeMode="NoResize"
-        Width="520" Height="220"
+        Width="580" Height="240"
         Loaded="Window_Loaded"
         Unloaded="Window_Unloaded">
 
@@ -16,8 +16,15 @@
         <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI, Yu Gothic UI, Meiryo UI, sans-serif</FontFamily>
 
         <LinearGradientBrush x:Key="EdgeBrush" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#14FFFFFF" Offset="0" />
-            <GradientStop Color="#08FFFFFF" Offset="1" />
+            <GradientStop Color="#3FFFFFFF" Offset="0" />
+            <GradientStop Color="#14FFFFFF" Offset="0.35" />
+            <GradientStop Color="#06FFFFFF" Offset="1" />
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="BodyBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#222228" Offset="0" />
+            <GradientStop Color="#101013" Offset="0.55" />
+            <GradientStop Color="#08080A" Offset="1" />
         </LinearGradientBrush>
 
         <LinearGradientBrush x:Key="MarqueeMask" StartPoint="0,0" EndPoint="1,0">
@@ -28,18 +35,18 @@
         </LinearGradientBrush>
 
         <Style x:Key="TransportButton" TargetType="Button">
-            <Setter Property="Width" Value="32" />
-            <Setter Property="Height" Value="32" />
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
-            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontSize" Value="16" />
             <Setter Property="Foreground" Value="White" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Surface" CornerRadius="16" Background="Transparent"
+                        <Border x:Name="Surface" CornerRadius="18" Background="Transparent"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform><ScaleTransform x:Name="PressScale" ScaleX="1" ScaleY="1" /></Border.RenderTransform>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -54,19 +61,19 @@
                             <EventTrigger RoutedEvent="PreviewMouseLeftButtonDown">
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleX" To="0.92" Duration="0:0:0.06" />
-                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleY" To="0.92" Duration="0:0:0.06" />
+                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleX" To="0.93" Duration="0:0:0.09" />
+                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleY" To="0.93" Duration="0:0:0.09" />
                                     </Storyboard>
                                 </BeginStoryboard>
                             </EventTrigger>
                             <EventTrigger RoutedEvent="PreviewMouseLeftButtonUp">
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.1">
-                                            <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.3" /></DoubleAnimation.EasingFunction>
+                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.18">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
                                         </DoubleAnimation>
-                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.1">
-                                            <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.3" /></DoubleAnimation.EasingFunction>
+                                        <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.18">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
                                         </DoubleAnimation>
                                     </Storyboard>
                                 </BeginStoryboard>
@@ -86,18 +93,18 @@
                     <DataTrigger.EnterActions>
                         <BeginStoryboard>
                             <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.3" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.3" Duration="0:0:0.12" />
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.3" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.3" Duration="0:0:0.18" />
                             </Storyboard>
                         </BeginStoryboard>
                     </DataTrigger.EnterActions>
                     <DataTrigger.ExitActions>
                         <BeginStoryboard>
                             <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.12" />
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.18" />
                             </Storyboard>
                         </BeginStoryboard>
                     </DataTrigger.ExitActions>
@@ -114,18 +121,18 @@
                     <DataTrigger.EnterActions>
                         <BeginStoryboard>
                             <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.12" />
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.18" />
                             </Storyboard>
                         </BeginStoryboard>
                     </DataTrigger.EnterActions>
                     <DataTrigger.ExitActions>
                         <BeginStoryboard>
                             <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.6" Duration="0:0:0.12" />
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.6" Duration="0:0:0.12" />
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.6" Duration="0:0:0.18" />
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.6" Duration="0:0:0.18" />
                             </Storyboard>
                         </BeginStoryboard>
                     </DataTrigger.ExitActions>
@@ -164,24 +171,28 @@
         <Grid x:Name="SlideHost" RenderTransformOrigin="0.5,0">
             <Grid.RenderTransform><TranslateTransform x:Name="SlideTransform" Y="-100" /></Grid.RenderTransform>
 
-            <Path x:Name="GlowPath" Stretch="Fill" Fill="{Binding AccentBrush}" Opacity="0.45" IsHitTestVisible="False">
-                <Path.Effect><BlurEffect Radius="24" /></Path.Effect>
+            <Path x:Name="ShadowWide" Stretch="Fill" Fill="#000000" Opacity="0.28" IsHitTestVisible="False">
+                <Path.Effect><BlurEffect Radius="22" /></Path.Effect>
+                <Path.RenderTransform><TranslateTransform Y="8" /></Path.RenderTransform>
             </Path>
-            <Path x:Name="ShadowPath" Stretch="Fill" Fill="#000000" Opacity="0.45" IsHitTestVisible="False">
-                <Path.Effect><BlurEffect Radius="10" /></Path.Effect>
-                <Path.RenderTransform><TranslateTransform Y="3" /></Path.RenderTransform>
+            <Path x:Name="GlowPath" Stretch="Fill" Fill="{Binding AccentBrush}" Opacity="0.5" IsHitTestVisible="False">
+                <Path.Effect><BlurEffect Radius="26" /></Path.Effect>
+            </Path>
+            <Path x:Name="ShadowPath" Stretch="Fill" Fill="#000000" Opacity="0.5" IsHitTestVisible="False">
+                <Path.Effect><BlurEffect Radius="7" /></Path.Effect>
+                <Path.RenderTransform><TranslateTransform Y="2" /></Path.RenderTransform>
             </Path>
 
-            <Grid x:Name="Pill" Width="220" Height="36" Margin="0,9,0,0"
+            <Grid x:Name="Pill" Width="264" Height="44" Margin="0,9,0,0"
                   HorizontalAlignment="Center" VerticalAlignment="Top" ClipToBounds="True"
                                     MouseLeftButtonDown="Pill_MouseLeftButtonDown"
                    MouseRightButtonDown="Pill_MouseRightDown" MouseMove="Pill_MouseRightMove"
                    MouseRightButtonUp="Pill_MouseRightUp" MouseWheel="Pill_MouseWheel">
                 <Grid.Clip>
-                    <RectangleGeometry x:Name="PillClip" Rect="0,0,220,36" RadiusX="18" RadiusY="18" />
+                    <RectangleGeometry x:Name="PillClip" Rect="0,0,264,44" RadiusX="22" RadiusY="22" />
                 </Grid.Clip>
 
-                <Path x:Name="BodyPath" Stretch="Fill" Fill="#000000" IsHitTestVisible="False" />
+                <Path x:Name="BodyPath" Stretch="Fill" Fill="{StaticResource BodyBrush}" IsHitTestVisible="False" />
                 <Path x:Name="EdgePath" Stretch="Fill" Fill="Transparent" Stroke="{StaticResource EdgeBrush}"
                       StrokeThickness="1" IsHitTestVisible="False" />
 
@@ -192,15 +203,15 @@
                         <RowDefinition Height="2" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="28" />
                         <ColumnDefinition Width="10" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <Border Width="24" Height="24" CornerRadius="7" Background="#202024" VerticalAlignment="Center">
+                    <Border Width="28" Height="28" CornerRadius="9" Background="#202024" VerticalAlignment="Center">
                         <Grid>
-                            <TextBlock Style="{StaticResource ArtPlaceholder}" FontSize="11" />
-                            <Border CornerRadius="7">
+                            <TextBlock Style="{StaticResource ArtPlaceholder}" FontSize="12" />
+                            <Border CornerRadius="9">
                                 <Border.Background>
                                     <ImageBrush ImageSource="{Binding AlbumArt}" Stretch="UniformToFill" />
                                 </Border.Background>
@@ -211,7 +222,7 @@
                     <Grid Grid.Column="2" Height="20" VerticalAlignment="Center" ClipToBounds="True"
                           OpacityMask="{StaticResource MarqueeMask}">
                         <TextBlock x:Name="CompactTitle" Text="{Binding Title}" FontFamily="{StaticResource UiFont}"
-                                   FontSize="12" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"
+                                   FontSize="13" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis">
                             <TextBlock.RenderTransform><TranslateTransform x:Name="CompactTitleTranslate" X="0" /></TextBlock.RenderTransform>
                         </TextBlock>
@@ -246,9 +257,9 @@
                     </Border>
 
                     <StackPanel Grid.Column="2" VerticalAlignment="Center" MinWidth="0">
-                        <TextBlock Text="{Binding Title}" FontFamily="{StaticResource UiFont}" FontSize="13"
+                        <TextBlock Text="{Binding Title}" FontFamily="{StaticResource UiFont}" FontSize="14"
                                    FontWeight="SemiBold" Foreground="White" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding Artist}" FontFamily="{StaticResource UiFont}" FontSize="11"
+                        <TextBlock Text="{Binding Artist}" FontFamily="{StaticResource UiFont}" FontSize="12"
                                    Foreground="#99FFFFFF" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                     </StackPanel>
 
@@ -287,26 +298,26 @@
                 <!-- EXPANDED -->
                 <Grid x:Name="ExpandedRoot" Opacity="0" IsHitTestVisible="False" Margin="34,18,34,18">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="72" />
+                        <ColumnDefinition Width="80" />
                         <ColumnDefinition Width="14" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="12" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Grid x:Name="CoverHost" Width="72" Height="72">
-                        <Border x:Name="CoverA" CornerRadius="14" Background="#202024">
+                    <Grid x:Name="CoverHost" Width="80" Height="80">
+                        <Border x:Name="CoverA" CornerRadius="16" Background="#202024">
                             <Border.RenderTransform><ScaleTransform x:Name="CoverAScale" ScaleX="1" ScaleY="1" /></Border.RenderTransform>
                             <Grid>
                                 <TextBlock Style="{StaticResource ArtPlaceholder}" FontSize="24" />
-                                <Border x:Name="CoverAArt" CornerRadius="14" />
+                                <Border x:Name="CoverAArt" CornerRadius="16" />
                             </Grid>
                         </Border>
-                        <Border x:Name="CoverB" CornerRadius="14" Background="#202024" Opacity="0">
+                        <Border x:Name="CoverB" CornerRadius="16" Background="#202024" Opacity="0">
                             <Border.RenderTransform><ScaleTransform x:Name="CoverBScale" ScaleX="0.9" ScaleY="0.9" /></Border.RenderTransform>
                             <Grid>
                                 <TextBlock Style="{StaticResource ArtPlaceholder}" FontSize="24" />
-                                <Border x:Name="CoverBArt" CornerRadius="14" />
+                                <Border x:Name="CoverBArt" CornerRadius="16" />
                             </Grid>
                         </Border>
                     </Grid>
@@ -322,11 +333,11 @@
                         <Grid Height="34" ClipToBounds="True" OpacityMask="{StaticResource MarqueeMask}">
                             <StackPanel x:Name="TitleTranslate" VerticalAlignment="Center">
                                 <StackPanel.RenderTransform><TranslateTransform x:Name="ExpandedTitleTranslate" Y="0" /></StackPanel.RenderTransform>
-                                <TextBlock x:Name="ExpandedTitle" FontFamily="{StaticResource UiFont}" FontSize="14"
+                                <TextBlock x:Name="ExpandedTitle" FontFamily="{StaticResource UiFont}" FontSize="15"
                                            FontWeight="SemiBold" Foreground="White" TextTrimming="CharacterEllipsis">
                                     <TextBlock.RenderTransform><TranslateTransform x:Name="ExpandedTitleMarquee" X="0" /></TextBlock.RenderTransform>
                                 </TextBlock>
-                                <TextBlock x:Name="ExpandedArtist" FontFamily="{StaticResource UiFont}" FontSize="11"
+                                <TextBlock x:Name="ExpandedArtist" FontFamily="{StaticResource UiFont}" FontSize="12"
                                            Foreground="#99FFFFFF" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                             </StackPanel>
                         </Grid>
