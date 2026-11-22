@@ -28,20 +28,37 @@ public partial class MainWindow : Window
     private const int GwlExStyle = -20;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
+    private const int WsExLayered = 0x00080000;
+    private const int WsExTransparent = 0x00000020;
     private const uint SwpNosize = 0x0001;
+    private const uint SwpNomove = 0x0002;
     private const uint SwpNozorder = 0x0004;
     private const uint SwpNoactivate = 0x0010;
+    private const uint SwpFramechanged = 0x0020;
     private const int WmNcHitTest = 0x0084;
+    private const int WmHotkey = 0x0312;
     private const int HtTransparent = -1;
+    private const int ModAlt = 0x0001;
+    private const int ModControl = 0x0002;
+    private const int VkSpace = 0x20;
+    private const int VkLeft = 0x25;
+    private const int VkRight = 0x27;
+    private const int VkControl = 0x11;
+    private const int VkMenu = 0x12;
+    private const int VkE = 0x45;
+    private const int HotkeyExpand = 4;
+    private const int WhMouseLl = 14;
+    private const int WmMouseWheel = 0x020A;
+    private const int WmQuit = 0x0012;
 
     private readonly MainViewModel _vm;
     private readonly DispatcherTimer _renderTimer;
     private readonly DispatcherTimer _cursorTimer;
     private readonly DispatcherTimer _leaveTimer;
-    private readonly DispatcherTimer _peekTimer;
     private readonly DispatcherTimer _fullscreenTimer;
+    private readonly DispatcherTimer _volumeTimer;
+    private readonly DispatcherTimer _syncTimer;
 
-    private Storyboard? _barsStoryboard;
     private TranslateTransform _slide = new(0, -100);
     private TranslateTransform _seekHead = new();
     private TranslateTransform _expandedTitleSlide = new();
@@ -54,6 +71,28 @@ public partial class MainWindow : Window
     private bool _showCoverB;
     private int _lastTrackRevision = -1;
     private bool _lastPlaying;
+    private bool _clickThrough;
+    private bool _altHeld;
+    private bool _stickyExpanded;
+    private double _targetOpacity = 1;
+    private double _displayProgress;
+    private bool _volumeDragging;
+    private Grid? _volumeTrack;
+    private Border? _volumeFill;
+    private bool _dragging;
+    private WinPoint _dragOrigin;
+    private int _dragWindowX;
+    private int _dragWindowY;
+    private bool _hasPinnedPosition;
+    private WinPoint _pinnedPosition;
+    private Rect _pillRect;
+
+    private delegate IntPtr LowLevelMouseProc(int code, IntPtr wParam, IntPtr lParam);
+
+    private static MainWindow? _hookOwner;
+    private static LowLevelMouseProc? _mouseProc;
+    private static IntPtr _mouseHook;
+    private static int _hookThreadId;
 
     public MainWindow()
     {
@@ -64,17 +103,34 @@ public partial class MainWindow : Window
         _renderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _renderTimer.Tick += (_, _) => { _vm.Tick(); UpdateSeekUI(); };
 
-        _cursorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-        _cursorTimer.Tick += (_, _) => PollCursor();
+        // Hover is polled from GetCursorPos, not from WPF mouse events: a click-through
+        // window receives none. 16 ms also gives the opacity easing a smooth 60 fps cadence.
+        _cursorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _cursorTimer.Tick += (_, _) =>
+        {
+            PollCursor();
+            if (Math.Abs(Shell.Opacity - _targetOpacity) > 0.01)
+                Shell.Opacity += (_targetOpacity - Shell.Opacity) * 0.22;
+            else
+                Shell.Opacity = _targetOpacity;
+        };
 
         _leaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         _leaveTimer.Tick += (_, _) => { _leaveTimer.Stop(); if (!_seeking && !_hovering) Leave(); };
 
-        _peekTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        _peekTimer.Tick += (_, _) => { _peekTimer.Stop(); if (!_hovering) Leave(); };
-
         _fullscreenTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         _fullscreenTimer.Tick += (_, _) => UpdateFullscreen();
+
+        _volumeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        _volumeTimer.Tick += (_, _) =>
+        {
+            if (!_volumeDragging) _vm.RefreshVolume();
+            UpdateVolumeUI();
+        };
+
+        // Media events can be sparse; re-read the timeline four times a second.
+        _syncTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _syncTimer.Tick += (_, _) => _vm.SyncTimeline();
 
         Pill.SizeChanged += (_, _) => UpdateShape();
         GlowPath.HorizontalAlignment = ShadowPath.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
@@ -87,16 +143,37 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
         var hwnd = new WindowInteropHelper(this).Handle;
         long style = GetWindowLongPtr(hwnd, GwlExStyle).ToInt64();
-        _ = SetWindowLongPtr(hwnd, GwlExStyle, new IntPtr(style | WsExToolWindow | WsExNoActivate));
+        // AllowsTransparency already sets WS_EX_LAYERED; declare it explicitly for the fade.
+        _ = SetWindowLongPtr(hwnd, GwlExStyle,
+            new IntPtr(style | WsExToolWindow | WsExNoActivate | WsExLayered));
         HwndSource.FromHwnd(hwnd)?.AddHook(HwndHook);
+        RegisterHotKey(hwnd, 1, ModControl | ModAlt, VkSpace);
+        RegisterHotKey(hwnd, 2, ModControl | ModAlt, VkRight);
+        RegisterHotKey(hwnd, 3, ModControl | ModAlt, VkLeft);
+        RegisterHotKey(hwnd, HotkeyExpand, ModControl | ModAlt, VkE);
     }
 
     private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == WmHotkey)
+        {
+            if (MainViewModel.HotkeysEnabled)
+            {
+                switch (wParam.ToInt32())
+                {
+                    case 1: _vm.PlayPauseCommand.Execute(null); break;
+                    case 2: _vm.NextCommand.Execute(null); break;
+                    case 3: _vm.PreviousCommand.Execute(null); break;
+                    case HotkeyExpand: ToggleStickyExpanded(); break;
+                }
+            }
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (msg != WmNcHitTest) return IntPtr.Zero;
 
-        // Hidden is offscreen, and the hover zone is found by global cursor polling,
-        // so the whole window can stay click-through until a pill state is shown.
+        // Outside the pill the window must never swallow clicks meant for the app behind it.
         if (_state == IslandState.Hidden)
         {
             handled = true;
@@ -104,9 +181,8 @@ public partial class MainWindow : Window
         }
 
         int raw = lParam.ToInt32();
-        var local = PointFromScreen(new Point((short)(raw & 0xFFFF), (short)((raw >> 16) & 0xFFFF)));
-        var bounds = Pill.TransformToVisual(this).TransformBounds(new Rect(0, 0, Pill.ActualWidth, Pill.ActualHeight));
-        if (!bounds.Contains(local))
+        var screen = new Point((short)(raw & 0xFFFF), (short)((raw >> 16) & 0xFFFF));
+        if (!GetPillLayoutRect().Contains(screen))
         {
             handled = true;
             return new IntPtr(HtTransparent);
@@ -120,21 +196,22 @@ public partial class MainWindow : Window
         SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
         UnfreezeAnimatedTransforms();
-        BuildBars();
         UpdateShape();
         PositionAtTopCenter();
-        SetCover(CoverA, _vm.AlbumArt);
-        UpdateBars();
+        SetCover(CoverAArt, _vm.AlbumArt);
         UpdateAccent(_vm.AccentColor);
 
         _renderTimer.Start();
         _cursorTimer.Start();
         _fullscreenTimer.Start();
+        _volumeTimer.Start();
+        _syncTimer.Start();
+        StartMouseHook();
+        UpdateVolumeUI();
 
         if (!MainViewModel.AutoHide) Show(IslandState.Compact, false);
 
-        try { _ = _vm.InitializeAsync(); }
-        catch { /* media access can be denied; tray stays usable */ }
+        _ = _vm.InitializeAsync();
     }
 
     private void Window_Unloaded(object sender, RoutedEventArgs e)
@@ -144,9 +221,69 @@ public partial class MainWindow : Window
         _renderTimer.Stop();
         _cursorTimer.Stop();
         _leaveTimer.Stop();
-        _peekTimer.Stop();
         _fullscreenTimer.Stop();
+        _volumeTimer.Stop();
+        _syncTimer.Stop();
         _ = _vm.DisposeAsync();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero)
+        {
+            for (int id = 1; id <= 3; id++) UnregisterHotKey(hwnd, id);
+            UnregisterHotKey(hwnd, HotkeyExpand);
+        }
+        _hookOwner = null;
+        if (_hookThreadId != 0) PostThreadMessage(_hookThreadId, WmQuit, IntPtr.Zero, IntPtr.Zero);
+        base.OnClosed(e);
+    }
+
+    // The island never activates, so Windows sends wheel messages to the focused app.
+    // A low-level hook is the only way to catch scrolling while it sits over the pill.
+    private void StartMouseHook()
+    {
+        _hookOwner = this;
+        _mouseProc = MouseHookCallback;
+        var thread = new Thread(() =>
+        {
+            _hookThreadId = GetCurrentThreadId();
+            try
+            {
+                _mouseHook = SetWindowsHookEx(WhMouseLl, _mouseProc, GetModuleHandle(null), 0);
+                var msg = new NativeMessage();
+                while (GetMessage(out msg, IntPtr.Zero, 0, 0) > 0)
+                {
+                    TranslateMessage(ref msg);
+                    DispatchMessage(ref msg);
+                }
+            }
+            finally
+            {
+                if (_mouseHook != IntPtr.Zero) UnhookWindowsHookEx(_mouseHook);
+                _mouseHook = IntPtr.Zero;
+                _hookThreadId = 0;
+            }
+        });
+        thread.IsBackground = true;
+        thread.Start();
+    }
+
+    private static IntPtr MouseHookCallback(int code, IntPtr wParam, IntPtr lParam)
+    {
+        var owner = _hookOwner;
+        if (code >= 0 && wParam == (IntPtr)WmMouseWheel && owner is not null)
+        {
+            var data = Marshal.PtrToStructure<MouseHookData>(lParam);
+            if (owner._pillRect.Contains(new Point(data.Point.X, data.Point.Y)))
+            {
+                int delta = (short)((data.MouseData >> 16) & 0xFFFF);
+                owner.Dispatcher.BeginInvoke(new Action(() => owner._vm.ChangeVolume(Math.Sign(delta) * 5)));
+                return new IntPtr(1);
+            }
+        }
+        return CallNextHookEx(_mouseHook, code, wParam, lParam);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -154,19 +291,27 @@ public partial class MainWindow : Window
         switch (e.PropertyName)
         {
             case nameof(MainViewModel.IsPlaying):
-                UpdateBars();
-                if (_vm.IsPlaying && !_lastPlaying && _vm.IsActive) AutoPeek();
                 _lastPlaying = _vm.IsPlaying;
                 break;
             case nameof(MainViewModel.AccentColor):
                 UpdateAccent(_vm.AccentColor);
+                break;
+            // A browser often publishes the thumbnail after the title. The expanded
+            // covers are painted in code, so they need this explicit refresh.
+            case nameof(MainViewModel.AlbumArt):
+                CrossfadeCovers(_vm.AlbumArt);
                 break;
             case nameof(MainViewModel.TrackRevision):
                 OnTrackChanged();
                 break;
             case nameof(MainViewModel.IsActive):
                 if (!_vm.IsActive) Hide();
-                else if (_vm.IsPlaying) AutoPeek();
+                else if (!_altHeld && !_stickyExpanded) Show(IslandState.Compact);
+                break;
+            case nameof(MainViewModel.Volume):
+            case nameof(MainViewModel.IsMuted):
+            case nameof(MainViewModel.VolumeGlyph):
+                UpdateVolumeUI();
                 break;
         }
     }
@@ -215,69 +360,8 @@ public partial class MainWindow : Window
         CompactTitle.RenderTransform = new TranslateTransform();
         ExpandedTitle.RenderTransform = new TranslateTransform();
 
-        foreach (var bar in new[] { Bar1, Bar2, Bar3, Bar4 })
-            bar.RenderTransform = new ScaleTransform(1, 0.18);
-
         foreach (var glyph in new[] { PeekPlayGlyph, PeekPauseGlyph, ExpandedPlayGlyph, ExpandedPauseGlyph })
             glyph.RenderTransform = new ScaleTransform(1, glyph == PeekPauseGlyph || glyph == ExpandedPauseGlyph ? 0.6 : 1);
-    }
-
-    private void BuildBars()
-    {
-        _barsStoryboard = new Storyboard { RepeatBehavior = RepeatBehavior.Forever, AutoReverse = true };
-        AddBarAnimation(Bar1, 310, 0);
-        AddBarAnimation(Bar2, 470, 90);
-        AddBarAnimation(Bar3, 390, 180);
-        AddBarAnimation(Bar4, 530, 40);
-    }
-
-    private void AddBarAnimation(Rectangle bar, int durationMs, int delayMs)
-    {
-        var anim = new DoubleAnimation(0.18, 1, TimeSpan.FromMilliseconds(durationMs))
-        {
-            BeginTime = TimeSpan.FromMilliseconds(delayMs),
-            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
-        };
-        Storyboard.SetTarget(anim, bar);
-        Storyboard.SetTargetProperty(anim, new PropertyPath("(UIElement.RenderTransform).(ScaleTransform.ScaleY)"));
-        _barsStoryboard!.Children.Add(anim);
-    }
-
-    private void UpdateBars()
-    {
-        if (_vm.IsPlaying)
-        {
-            StopBars();
-            _barsStoryboard?.Begin(this, true);
-        }
-        else
-        {
-            StopBars();
-            var stop = new Storyboard();
-            foreach (var bar in new[] { Bar1, Bar2, Bar3, Bar4 })
-            {
-                var anim = new DoubleAnimation(0.18, TimeSpan.FromMilliseconds(280))
-                {
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-                };
-                Storyboard.SetTarget(anim, bar);
-                Storyboard.SetTargetProperty(anim, new PropertyPath("(UIElement.RenderTransform).(ScaleTransform.ScaleY)"));
-                stop.Children.Add(anim);
-            }
-            stop.Begin(this, true);
-        }
-    }
-
-    private void StopBars()
-    {
-        if (_barsStoryboard is null) return;
-        _barsStoryboard.Stop(this);
-        foreach (var bar in new[] { Bar1, Bar2, Bar3, Bar4 })
-        {
-            if (bar.RenderTransform is not ScaleTransform scale) continue;
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-            scale.ScaleY = 0.18;
-        }
     }
 
     private void UpdateAccent(Color color)
@@ -290,19 +374,9 @@ public partial class MainWindow : Window
         if (_lastTrackRevision == _vm.TrackRevision) return;
         _lastTrackRevision = _vm.TrackRevision;
 
-        CrossfadeCovers(_vm.AlbumArt);
         Animate(_expandedTitleSlide, TranslateTransform.YProperty, 10, 0, 240);
 
         Dispatcher.BeginInvoke(new Action(() => { StartMarquee(CompactTitle); StartMarquee(ExpandedTitle); }));
-        AutoPeek();
-    }
-
-    private void AutoPeek()
-    {
-        if (!MainViewModel.AutoHide || _fullscreen || _hovering || !_vm.IsActive) return;
-        _peekTimer.Stop();
-        Show(IslandState.Peek, false);
-        _peekTimer.Start();
     }
 
     private void CrossfadeCovers(ImageSource? art)
@@ -311,7 +385,7 @@ public partial class MainWindow : Window
         var outgoing = _showCoverB ? CoverB : CoverA;
         var incomingScale = _showCoverB ? _coverAScale : _coverBScale;
         var outgoingScale = _showCoverB ? _coverBScale : _coverAScale;
-        SetCover(incoming, art);
+        SetCover(_showCoverB ? CoverAArt : CoverBArt, art);
 
         var sb = new Storyboard();
         AddDouble(sb, outgoing, "Opacity", 1, 0, 220);
@@ -325,9 +399,10 @@ public partial class MainWindow : Window
         _showCoverB = !_showCoverB;
     }
 
+    // Leave the art layer transparent when there is no thumbnail so the note shows through.
     private static void SetCover(Border cover, ImageSource? art)
         => cover.Background = art is null
-            ? new SolidColorBrush(Color.FromArgb(255, 32, 32, 36))
+            ? null
             : new ImageBrush(art) { Stretch = Stretch.UniformToFill };
 
     private static void AddDouble(Storyboard sb, DependencyObject target, string property,
@@ -377,6 +452,19 @@ public partial class MainWindow : Window
     {
         if (_state == target) return;
         _state = target;
+
+        if (target == IslandState.Hidden)
+        {
+            _targetOpacity = 1;
+            Shell.Opacity = 1;
+            SetClickThrough(false);
+        }
+        else if (target == IslandState.Expanded)
+        {
+            // The controller must receive clicks while it is open.
+            _targetOpacity = 1;
+            SetClickThrough(false);
+        }
 
         double width = target switch
         {
@@ -441,18 +529,67 @@ public partial class MainWindow : Window
     [StructLayout(LayoutKind.Sequential)]
     private struct WinPoint { public int X; public int Y; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseHookData
+    {
+        public WinPoint Point;
+        public int MouseData;
+        public int Flags;
+        public int Time;
+        public IntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMessage
+    {
+        public IntPtr Handle;
+        public uint Message;
+        public IntPtr WParam;
+        public IntPtr LParam;
+        public int Time;
+        public WinPoint Point;
+    }
+
     private void PollCursor()
     {
         if (!GetCursorPos(out WinPoint cursor)) return;
 
-        var area = Screen.PrimaryScreen?.Bounds ?? default;
-        bool inZone = cursor.X >= area.Left + area.Width / 2 - 100
+        // GetAsyncKeyState is process-independent; GetKeyState only sees this thread's queue.
+        bool hold = (GetAsyncKeyState(VkMenu) & 0x8000) != 0
+                    || (GetAsyncKeyState(VkControl) & 0x8000) != 0;
+        if (hold && !_altHeld)
+        {
+            _altHeld = true;
+            if (_vm.IsActive) Show(IslandState.Expanded);
+            _targetOpacity = 1;
+            SetClickThrough(false);
+        }
+        else if (!hold && _altHeld)
+        {
+            _altHeld = false;
+            if (!_stickyExpanded) Show(IslandState.Compact);
+        }
+
+        var area = GetTargetScreen()?.Bounds ?? default;
+        bool inZone = area.Width > 0
+                      && cursor.X >= area.Left + area.Width / 2 - 100
                       && cursor.X <= area.Left + area.Width / 2 + 100
                       && cursor.Y >= area.Top && cursor.Y <= area.Top + 10;
 
-        var pillRect = GetPillScreenRect();
-        bool inPill = cursor.X >= pillRect.Left && cursor.X <= pillRect.Right
-                      && cursor.Y >= pillRect.Top && cursor.Y <= pillRect.Bottom;
+        _pillRect = GetPillLayoutRect();
+        bool inPill = _pillRect.Width > 0
+                      && cursor.X >= _pillRect.Left && cursor.X <= _pillRect.Right
+                      && cursor.Y >= _pillRect.Top && cursor.Y <= _pillRect.Bottom;
+
+        if (_state == IslandState.Expanded || _stickyExpanded)
+        {
+            // Buttons must stay clickable while the controller is open.
+            _hovering = inPill;
+            _leaveTimer.Stop();
+            _targetOpacity = 1;
+            SetClickThrough(false);
+            return;
+        }
 
         if (_fullscreen && !inZone && !inPill)
         {
@@ -465,23 +602,35 @@ public partial class MainWindow : Window
         {
             _hovering = true;
             _leaveTimer.Stop();
-            if (_state == IslandState.Compact) Show(IslandState.Peek);
+            if (MainViewModel.DodgeOnHover)
+            {
+                // Once WS_EX_TRANSPARENT is set the pill gets no mouse events at all,
+                // so leaving is detected by this same poll against GetWindowRect.
+                _targetOpacity = 0;
+                SetClickThrough(true);
+            }
+            else
+            {
+                _targetOpacity = 1;
+                SetClickThrough(false);
+            }
             return;
         }
 
         if (inZone)
         {
-            // The hover zone is the deliberate escape hatch from fullscreen suppression.
+            // Top-center zone is the deliberate escape hatch from fullscreen suppression.
             _hovering = true;
             _leaveTimer.Stop();
-            if (_state == IslandState.Hidden || _state == IslandState.Compact) Show(IslandState.Peek);
+            _targetOpacity = 1;
+            SetClickThrough(false);
+            if (_state == IslandState.Hidden) Show(IslandState.Compact);
             return;
         }
 
-        if (_seeking)
-        {
-            FinishSeek();
-        }
+        if (_seeking) FinishSeek();
+        _targetOpacity = 1;
+        SetClickThrough(false);
 
         if (_hovering)
         {
@@ -491,32 +640,49 @@ public partial class MainWindow : Window
         }
     }
 
-    private Rect GetPillScreenRect()
+    private void ToggleStickyExpanded()
+    {
+        _stickyExpanded = !_stickyExpanded;
+        if (_stickyExpanded)
+        {
+            if (_vm.IsActive) Show(IslandState.Expanded);
+            _targetOpacity = 1;
+            SetClickThrough(false);
+        }
+        else if (!_altHeld)
+        {
+            Show(IslandState.Compact);
+        }
+    }
+
+    // Layout position, not the animated one, so a faded pill still owns its hover area.
+    private Rect GetPillLayoutRect()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         if (!GetWindowRect(hwnd, out WinRect win)) return default;
 
         double scale = VisualTreeHelper.GetDpi(this).PixelsPerInchX / 96.0;
-        var local = Pill.TransformToVisual(this).TransformBounds(new Rect(0, 0, Pill.ActualWidth, Pill.ActualHeight));
-        return new Rect(
-            win.Left + local.Left * scale,
-            win.Top + local.Top * scale,
-            local.Width * scale,
-            local.Height * scale);
+        double width = (Pill.ActualWidth > 0 ? Pill.ActualWidth : Pill.Width) * scale;
+        double height = (Pill.ActualHeight > 0 ? Pill.ActualHeight : Pill.Height) * scale;
+        double windowWidth = (ActualWidth > 0 ? ActualWidth : Width) * scale;
+        return new Rect(win.Left + (windowWidth - width) / 2, win.Top + 9 * scale, width, height);
     }
 
-    private void Pill_MouseEnter(object sender, MouseEventArgs e)
+    private void SetClickThrough(bool enabled)
     {
-        _hovering = true;
-        _leaveTimer.Stop();
-        if (_state == IslandState.Compact) Show(IslandState.Peek);
-    }
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || _clickThrough == enabled) return;
 
-    private void Pill_MouseLeave(object sender, MouseEventArgs e)
-    {
-        _hovering = false;
-        _leaveTimer.Stop();
-        if (!_seeking) _leaveTimer.Start();
+        long style = GetWindowLongPtr(hwnd, GwlExStyle).ToInt64();
+        long next = enabled ? style | WsExTransparent : style & ~WsExTransparent;
+        if (next != style)
+        {
+            _ = SetWindowLongPtr(hwnd, GwlExStyle, new IntPtr(next));
+            // WS_EX_TRANSPARENT is cached by the window manager until the frame changes.
+            SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                SwpNosize | SwpNomove | SwpNozorder | SwpNoactivate | SwpFramechanged);
+        }
+        _clickThrough = enabled;
     }
 
     private void Pill_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -536,12 +702,158 @@ public partial class MainWindow : Window
         return false;
     }
 
+    private void Pill_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        _vm.ChangeVolume(Math.Sign(e.Delta) * 5);
+        e.Handled = true;
+    }
+
+    private void VolumeButton_Click(object sender, RoutedEventArgs e)
+    {
+        _vm.ToggleMute();
+        e.Handled = true;
+    }
+
+    private void VolumeHost_MouseEnter(object sender, MouseEventArgs e)
+    {
+        Animate(PeekVolumeHost, FrameworkElement.WidthProperty, PeekVolumeHost.ActualWidth, 116, 200);
+        Animate(PeekVolumePanel, FrameworkElement.WidthProperty, PeekVolumePanel.ActualWidth, 86, 200);
+    }
+
+    private void VolumeHost_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (_volumeDragging) return;
+        Animate(PeekVolumeHost, FrameworkElement.WidthProperty, PeekVolumeHost.ActualWidth, 30, 180);
+        Animate(PeekVolumePanel, FrameworkElement.WidthProperty, PeekVolumePanel.ActualWidth, 0, 180);
+    }
+
+    private void UpdateVolumeUI()
+    {
+        PeekVolumeGlyph.Text = _vm.VolumeGlyph;
+        ExpandedVolumeGlyph.Text = _vm.VolumeGlyph;
+
+        double width = PeekVolumeTrack.ActualWidth;
+        if (width > 0 && (!_volumeDragging || _volumeTrack == PeekVolumeTrack))
+            PeekVolumeFill.Width = _vm.Volume / 100 * width;
+
+        width = ExpandedVolumeTrack.ActualWidth;
+        if (width > 0 && (!_volumeDragging || _volumeTrack == ExpandedVolumeTrack))
+            ExpandedVolumeFill.Width = _vm.Volume / 100 * width;
+    }
+
+    private void PeekVolume_Down(object sender, MouseButtonEventArgs e) => BeginVolume(PeekVolumeTrack, PeekVolumeFill, e);
+    private void PeekVolume_Move(object sender, MouseEventArgs e) => MoveVolume(PeekVolumeTrack, e);
+    private void PeekVolume_Up(object sender, MouseButtonEventArgs e) => EndVolume(e);
+    private void ExpandedVolume_Down(object sender, MouseButtonEventArgs e) => BeginVolume(ExpandedVolumeTrack, ExpandedVolumeFill, e);
+    private void ExpandedVolume_Move(object sender, MouseEventArgs e) => MoveVolume(ExpandedVolumeTrack, e);
+    private void ExpandedVolume_Up(object sender, MouseButtonEventArgs e) => EndVolume(e);
+
+    private void BeginVolume(Grid track, Border fill, MouseButtonEventArgs e)
+    {
+        _volumeDragging = true;
+        _volumeTrack = track;
+        _volumeFill = fill;
+        _leaveTimer.Stop();
+        track.CaptureMouse();
+        MoveVolume(track, e);
+        e.Handled = true;
+    }
+
+    private void MoveVolume(Grid track, MouseEventArgs e)
+    {
+        if (!_volumeDragging || _volumeTrack != track) return;
+        double width = track.ActualWidth;
+        if (width <= 0) return;
+        double x = Math.Clamp(e.GetPosition(track).X, 0, width);
+        _vm.SetVolume(x / width * 100);
+        _volumeFill!.Width = x;
+        e.Handled = true;
+    }
+
+    private void EndVolume(MouseButtonEventArgs e)
+    {
+        if (!_volumeDragging) return;
+        _volumeTrack?.ReleaseMouseCapture();
+        _volumeDragging = false;
+        _volumeTrack = null;
+        _volumeFill = null;
+        _leaveTimer.Stop();
+        _leaveTimer.Start();
+        e.Handled = true;
+    }
+
+    private void Pill_MouseRightDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!GetCursorPos(out WinPoint cursor)) return;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (!GetWindowRect(hwnd, out WinRect win)) return;
+        _dragging = true;
+        _dragOrigin = cursor;
+        _dragWindowX = win.Left;
+        _dragWindowY = win.Top;
+        Pill.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void Pill_MouseRightMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragging || e.RightButton != MouseButtonState.Pressed) return;
+        if (!GetCursorPos(out WinPoint cursor)) return;
+        int dx = cursor.X - _dragOrigin.X;
+        int dy = cursor.Y - _dragOrigin.Y;
+        if (Math.Abs(dx) + Math.Abs(dy) < 4) return;
+        _pinnedPosition = new WinPoint { X = _dragWindowX + dx, Y = _dragWindowY + dy };
+        _hasPinnedPosition = true;
+        SetWindowPos(new WindowInteropHelper(this).Handle, IntPtr.Zero,
+            _pinnedPosition.X, _pinnedPosition.Y, 0, 0, SwpNosize | SwpNozorder | SwpNoactivate);
+    }
+
+    private void Pill_MouseRightUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        if (Pill.IsMouseCaptured) Pill.ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
+    private void OptionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        OpenOptions();
+        e.Handled = true;
+    }
+
+    public void OpenOptions() => new OptionsWindow(_vm, this).Show();
+
+    public void ApplyOptions()
+    {
+        _hasPinnedPosition = false;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            PositionAtTopCenter();
+            Dispatcher.BeginInvoke(new Action(UpdateShape));
+        }));
+        if (!MainViewModel.AutoHide) Show(IslandState.Compact, false);
+        else if (_state == IslandState.Compact) Hide();
+        if (MainViewModel.DodgeOnHover && _hovering)
+        {
+            _targetOpacity = 0;
+            SetClickThrough(true);
+        }
+    }
+
     private void UpdateSeekUI()
     {
+        double target = Math.Clamp(_vm.Progress, 0, 1);
+        _displayProgress += (target - _displayProgress) * 0.18;
+
+        double compactWidth = CompactProgressTrack.ActualWidth;
+        if (compactWidth > 0)
+            CompactProgressFill.Width = _displayProgress * compactWidth;
+
         if (_seeking) return;
         double width = SeekBar.ActualWidth;
         if (width <= 0) return;
-        double x = Math.Clamp(_vm.Progress, 0, 1) * width;
+        double x = _displayProgress * width;
         SeekFill.Width = x;
         _seekHead.X = x - 5;
     }
@@ -599,14 +911,28 @@ public partial class MainWindow : Window
     private void OnDisplaySettingsChanged(object? sender, EventArgs e)
         => Dispatcher.BeginInvoke(new Action(() => { PositionAtTopCenter(); Dispatcher.BeginInvoke(new Action(UpdateShape)); }));
 
+    private static Screen? GetTargetScreen()
+    {
+        var screens = Screen.AllScreens;
+        int index = MainViewModel.MonitorIndex;
+        if (index >= 0 && index < screens.Length) return screens[index];
+        return Screen.PrimaryScreen ?? screens.FirstOrDefault();
+    }
+
     private void PositionAtTopCenter()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
-        var primary = Screen.PrimaryScreen;
-        if (primary is null) return;
 
-        var area = primary.Bounds;
+        if (_hasPinnedPosition)
+        {
+            SetWindowPos(hwnd, IntPtr.Zero, _pinnedPosition.X, _pinnedPosition.Y, 0, 0,
+                SwpNosize | SwpNozorder | SwpNoactivate);
+            return;
+        }
+
+        var area = GetTargetScreen()?.Bounds ?? default;
+        if (area.Width <= 0) return;
         double widthDip = ActualWidth > 0 ? ActualWidth : Width;
         int widthPx = (int)Math.Round(widthDip * VisualTreeHelper.GetDpi(this).PixelsPerInchX / 96.0);
         SetWindowPos(hwnd, IntPtr.Zero, area.Left + (area.Width - widthPx) / 2, area.Top,
@@ -670,4 +996,40 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out WinPoint point);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, int key);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int hook, LowLevelMouseProc proc, IntPtr module, uint threadId);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr GetModuleHandle(string? moduleName);
+
+    [DllImport("kernel32.dll")]
+    private static extern int GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostThreadMessage(int threadId, uint message, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern int GetMessage(out NativeMessage message, IntPtr hwnd, uint min, uint max);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref NativeMessage message);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref NativeMessage message);
 }

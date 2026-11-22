@@ -23,6 +23,8 @@ internal sealed class TrayIcon : IDisposable
         _startWithWindows.CheckedChanged += (_, _) => SetStartupEnabled(_startWithWindows.Checked);
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add("Settings", null, (_, _) => (System.Windows.Application.Current.MainWindow as MainWindow)?.OpenOptions());
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_startWithWindows);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => System.Windows.Application.Current.Shutdown());
@@ -45,13 +47,13 @@ internal sealed class TrayIcon : IDisposable
         window.WindowState = System.Windows.WindowState.Normal;
     }
 
-    private static bool IsStartupEnabled()
+    internal static bool IsStartupEnabled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKey);
         return key?.GetValue(AppName) is string value && value.Length > 0;
     }
 
-    private static void SetStartupEnabled(bool enabled)
+    internal static void SetStartupEnabled(bool enabled)
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKey, true);
         if (key is null) return;

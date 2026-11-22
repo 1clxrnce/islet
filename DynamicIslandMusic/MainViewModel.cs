@@ -10,10 +10,14 @@ namespace DynamicIslandMusic;
 
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
-    // Set false to keep the island parked in compact state instead of sliding away.
-    public static readonly bool AutoHide = true;
+    // Settings the options window edits. Kept in memory for this session.
+    public static bool AutoHide = true;
+    public static bool DodgeOnHover = true;
+    public static bool HotkeysEnabled = true;
+    public static int MonitorIndex = -1;
 
     private readonly MediaService _media;
+    private readonly VolumeService _volume = new();
 
     private string _title = "";
     private string _artist = "";
@@ -39,6 +43,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         _media = new MediaService();
         _media.StateChanged += OnMediaStateChanged;
+        _volume.Attach();
         PlayPauseCommand = new RelayCommand(() => _ = _media.PlayPauseAsync());
         PreviousCommand = new RelayCommand(() => _ = _media.PreviousAsync());
         NextCommand = new RelayCommand(() => _ = _media.NextAsync());
@@ -49,6 +54,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand PlayPauseCommand { get; }
     public ICommand PreviousCommand { get; }
     public ICommand NextCommand { get; }
+    public MediaService Media => _media;
 
     public string Title { get => _title; private set => Set(ref _title, value); }
     public string Artist { get => _artist; private set => Set(ref _artist, value); }
@@ -61,23 +67,72 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool CanSeek { get => _canSeek; private set => Set(ref _canSeek, value); }
     public bool CanPlay { get => _canPlay; private set => Set(ref _canPlay, value); }
     public bool CanPause { get => _canPause; private set => Set(ref _canPause, value); }
-    public bool CanPlayPause => CanPlay || CanPause;
-    public bool CanNext { get => _canNext; private set => Set(ref _canNext, value); }
-    public bool CanPrevious { get => _canPrevious; private set => Set(ref _canPrevious, value); }
+    // Stay enabled whenever a session exists; MediaService falls back to media keys.
+    public bool CanPlayPause => IsActive || CanPlay || CanPause;
+    public bool CanNext { get => IsActive || _canNext; private set => Set(ref _canNext, value); }
+    public bool CanPrevious { get => IsActive || _canPrevious; private set => Set(ref _canPrevious, value); }
     public bool HasArtist => !string.IsNullOrWhiteSpace(Artist);
     public int TrackRevision => _trackRevision;
 
     public TimeSpan Position => _displayPosition;
     public TimeSpan Duration => _endTime > _startTime ? _endTime - _startTime : TimeSpan.Zero;
-
     public double Progress => !IsLive && Duration > TimeSpan.Zero
         ? Math.Clamp(_displayPosition.TotalSeconds / Duration.TotalSeconds, 0, 1)
         : 0;
-
     public string Elapsed => Format(_displayPosition);
     public string Total => IsLive ? "LIVE" : Format(Duration);
 
-    public Task InitializeAsync() => _media.StartAsync();
+    public double Volume => _volume.Volume * 100;
+    public bool IsMuted => _volume.IsMuted;
+    public string VolumeGlyph => IsMuted || Volume <= 0 ? "\uE771" : "\uE767";
+
+    public IReadOnlyList<MediaSessionInfo> Sessions => _media.GetSessionInfos();
+    public string? PreferredSessionId
+    {
+        get => _media.PreferredSessionId;
+        set
+        {
+            _media.PreferredSessionId = value;
+            _media.Refresh();
+        }
+    }
+
+    public async Task InitializeAsync()
+    {
+        try { await _media.StartAsync(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Media access unavailable: {ex.Message}"); }
+    }
+
+    public void SyncTimeline() => _media.RefreshTimeline();
+
+    public void RefreshVolume()
+    {
+        double before = Volume;
+        bool wasMuted = IsMuted;
+        _volume.Refresh();
+        if (Volume != before) OnPropertyChanged(nameof(Volume));
+        if (IsMuted != wasMuted)
+        {
+            OnPropertyChanged(nameof(IsMuted));
+            OnPropertyChanged(nameof(VolumeGlyph));
+        }
+    }
+
+    public void SetVolume(double percent)
+    {
+        _volume.SetVolume(percent / 100.0);
+        OnPropertyChanged(nameof(Volume));
+        OnPropertyChanged(nameof(VolumeGlyph));
+    }
+
+    public void ChangeVolume(double deltaPercent) => SetVolume(Volume + deltaPercent);
+
+    public void ToggleMute()
+    {
+        _volume.SetMute(!_volume.IsMuted);
+        OnPropertyChanged(nameof(IsMuted));
+        OnPropertyChanged(nameof(VolumeGlyph));
+    }
 
     public Task SeekAsync(TimeSpan relativePosition)
     {
@@ -138,9 +193,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             CanSeek = snapshot.CanSeek;
             CanPlay = snapshot.CanPlay;
             CanPause = snapshot.CanPause;
-            OnPropertyChanged(nameof(CanPlayPause));
             CanNext = snapshot.CanNext;
             CanPrevious = snapshot.CanPrevious;
+            OnPropertyChanged(nameof(CanPlayPause));
+            OnPropertyChanged(nameof(CanNext));
+            OnPropertyChanged(nameof(CanPrevious));
             _startTime = snapshot.StartTime;
             _endTime = snapshot.EndTime;
             _rate = snapshot.PlaybackRate > 0 ? snapshot.PlaybackRate : 1;

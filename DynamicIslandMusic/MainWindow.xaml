@@ -27,17 +27,6 @@
             <GradientStop Color="Transparent" Offset="1" />
         </LinearGradientBrush>
 
-        <Style x:Key="BarStyle" TargetType="Rectangle">
-            <Setter Property="Width" Value="3" />
-            <Setter Property="RadiusX" Value="1.5" />
-            <Setter Property="RadiusY" Value="1.5" />
-            <Setter Property="Fill" Value="{Binding AccentBrush}" />
-            <Setter Property="RenderTransformOrigin" Value="0.5,1" />
-            <Setter Property="RenderTransform">
-                <Setter.Value><ScaleTransform ScaleY="0.18" /></Setter.Value>
-            </Setter>
-        </Style>
-
         <Style x:Key="TransportButton" TargetType="Button">
             <Setter Property="Width" Value="32" />
             <Setter Property="Height" Value="32" />
@@ -144,6 +133,23 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="VolumeTrack" TargetType="Grid">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="ArtPlaceholder" TargetType="TextBlock">
+            <Setter Property="Text" Value="♪" />
+            <Setter Property="FontFamily" Value="Segoe UI, sans-serif" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#C0C0CA" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+
         <Style x:Key="LiveHide" TargetType="FrameworkElement">
             <Setter Property="Visibility" Value="Visible" />
             <Style.Triggers>
@@ -161,15 +167,16 @@
             <Path x:Name="GlowPath" Stretch="Fill" Fill="{Binding AccentBrush}" Opacity="0.45" IsHitTestVisible="False">
                 <Path.Effect><BlurEffect Radius="24" /></Path.Effect>
             </Path>
-            <Path x:Name="ShadowPath" Stretch="Fill" Fill="#000000" Opacity="0.8" IsHitTestVisible="False">
-                <Path.Effect><BlurEffect Radius="14" /></Path.Effect>
-                <Path.RenderTransform><TranslateTransform Y="4" /></Path.RenderTransform>
+            <Path x:Name="ShadowPath" Stretch="Fill" Fill="#000000" Opacity="0.45" IsHitTestVisible="False">
+                <Path.Effect><BlurEffect Radius="10" /></Path.Effect>
+                <Path.RenderTransform><TranslateTransform Y="3" /></Path.RenderTransform>
             </Path>
 
             <Grid x:Name="Pill" Width="220" Height="36" Margin="0,9,0,0"
                   HorizontalAlignment="Center" VerticalAlignment="Top" ClipToBounds="True"
-                  MouseEnter="Pill_MouseEnter" MouseLeave="Pill_MouseLeave"
-                  MouseLeftButtonDown="Pill_MouseLeftButtonDown">
+                                    MouseLeftButtonDown="Pill_MouseLeftButtonDown"
+                   MouseRightButtonDown="Pill_MouseRightDown" MouseMove="Pill_MouseRightMove"
+                   MouseRightButtonUp="Pill_MouseRightUp" MouseWheel="Pill_MouseWheel">
                 <Grid.Clip>
                     <RectangleGeometry x:Name="PillClip" Rect="0,0,220,36" RadiusX="18" RadiusY="18" />
                 </Grid.Clip>
@@ -178,21 +185,31 @@
                 <Path x:Name="EdgePath" Stretch="Fill" Fill="Transparent" Stroke="{StaticResource EdgeBrush}"
                       StrokeThickness="1" IsHitTestVisible="False" />
 
-                <!-- COLLAPSED -->
+                <!-- MINI -->
                 <Grid x:Name="CompactRoot" Margin="12,0,12,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="2" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="24" />
                         <ColumnDefinition Width="10" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="8" />
-                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Border Width="24" Height="24" CornerRadius="7" Background="#202024">
-                        <Border Background="{Binding AlbumArt}" CornerRadius="7" />
+                    <Border Width="24" Height="24" CornerRadius="7" Background="#202024" VerticalAlignment="Center">
+                        <Grid>
+                            <TextBlock Style="{StaticResource ArtPlaceholder}" FontSize="11" />
+                            <Border CornerRadius="7">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{Binding AlbumArt}" Stretch="UniformToFill" />
+                                </Border.Background>
+                            </Border>
+                        </Grid>
                     </Border>
 
-                    <Grid Grid.Column="2" Height="20" ClipToBounds="True" OpacityMask="{StaticResource MarqueeMask}">
+                    <Grid Grid.Column="2" Height="20" VerticalAlignment="Center" ClipToBounds="True"
+                          OpacityMask="{StaticResource MarqueeMask}">
                         <TextBlock x:Name="CompactTitle" Text="{Binding Title}" FontFamily="{StaticResource UiFont}"
                                    FontSize="12" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis">
@@ -200,12 +217,11 @@
                         </TextBlock>
                     </Grid>
 
-                    <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Height="18">
-                        <Rectangle x:Name="Bar1" Style="{StaticResource BarStyle}" Height="12" />
-                        <Rectangle x:Name="Bar2" Style="{StaticResource BarStyle}" Height="17" Margin="3,0,0,0" />
-                        <Rectangle x:Name="Bar3" Style="{StaticResource BarStyle}" Height="14" Margin="3,0,0,0" />
-                        <Rectangle x:Name="Bar4" Style="{StaticResource BarStyle}" Height="10" Margin="3,0,0,0" />
-                    </StackPanel>
+                    <Grid x:Name="CompactProgressTrack" Grid.Row="1" Grid.ColumnSpan="3" Height="2" VerticalAlignment="Bottom">
+                        <Border Height="2" CornerRadius="1" Background="#2AFFFFFF" />
+                        <Border x:Name="CompactProgressFill" Height="2" CornerRadius="1" Width="0"
+                                HorizontalAlignment="Left" Background="{Binding AccentBrush}" />
+                    </Grid>
                 </Grid>
 
                 <!-- PEEK / HOVER -->
@@ -219,7 +235,14 @@
                     </Grid.ColumnDefinitions>
 
                     <Border Width="36" Height="36" CornerRadius="10" Background="#202024">
-                        <Border Background="{Binding AlbumArt}" CornerRadius="10" />
+                        <Grid>
+                            <TextBlock Style="{StaticResource ArtPlaceholder}" />
+                            <Border CornerRadius="10">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{Binding AlbumArt}" Stretch="UniformToFill" />
+                                </Border.Background>
+                            </Border>
+                        </Grid>
                     </Border>
 
                     <StackPanel Grid.Column="2" VerticalAlignment="Center" MinWidth="0">
@@ -229,13 +252,36 @@
                                    Foreground="#99FFFFFF" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                     </StackPanel>
 
-                    <Button Grid.Column="4" Style="{StaticResource TransportButton}" Width="30" Height="30"
-                            Command="{Binding PlayPauseCommand}" AutomationProperties.Name="Play or pause">
-                        <Grid>
-                            <TextBlock x:Name="PeekPlayGlyph" Style="{StaticResource PlayGlyphStyle}" Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Foreground="White" />
-                            <TextBlock x:Name="PeekPauseGlyph" Style="{StaticResource PauseGlyphStyle}" Text="&#xE769;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Foreground="White" />
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid x:Name="PeekVolumeHost" Width="30" HorizontalAlignment="Left"
+                              MouseEnter="VolumeHost_MouseEnter" MouseLeave="VolumeHost_MouseLeave">
+                            <Button x:Name="PeekVolumeButton" Style="{StaticResource TransportButton}"
+                                    Width="30" Height="30" Click="VolumeButton_Click"
+                                    AutomationProperties.Name="Mute or unmute">
+                                <TextBlock x:Name="PeekVolumeGlyph" Text="&#xE767;"
+                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="14" Foreground="White" />
+                            </Button>
+                            <Grid x:Name="PeekVolumePanel" Width="0" HorizontalAlignment="Right" ClipToBounds="True">
+                                <Grid x:Name="PeekVolumeTrack" Style="{StaticResource VolumeTrack}" Width="86"
+                                      PreviewMouseLeftButtonDown="PeekVolume_Down"
+                                      PreviewMouseMove="PeekVolume_Move"
+                                      PreviewMouseLeftButtonUp="PeekVolume_Up">
+                                    <Border Height="3" CornerRadius="1.5" Background="#3AFFFFFF" VerticalAlignment="Center" />
+                                    <Border x:Name="PeekVolumeFill" Height="3" CornerRadius="1.5" Width="0"
+                                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            Background="{Binding AccentBrush}" />
+                                </Grid>
+                            </Grid>
                         </Grid>
-                    </Button>
+                        <Button Style="{StaticResource TransportButton}" Width="30" Height="30"
+                                Command="{Binding PlayPauseCommand}" AutomationProperties.Name="Play or pause">
+                            <Grid>
+                                <TextBlock x:Name="PeekPlayGlyph" Style="{StaticResource PlayGlyphStyle}" Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Foreground="White" />
+                                <TextBlock x:Name="PeekPauseGlyph" Style="{StaticResource PauseGlyphStyle}" Text="&#xE769;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Foreground="White" />
+                            </Grid>
+                        </Button>
+                    </StackPanel>
                 </Grid>
 
                 <!-- EXPANDED -->
@@ -251,14 +297,23 @@
                     <Grid x:Name="CoverHost" Width="72" Height="72">
                         <Border x:Name="CoverA" CornerRadius="14" Background="#202024">
                             <Border.RenderTransform><ScaleTransform x:Name="CoverAScale" ScaleX="1" ScaleY="1" /></Border.RenderTransform>
+                            <Grid>
+                                <TextBlock Style="{StaticResource ArtPlaceholder}" FontSize="24" />
+                                <Border x:Name="CoverAArt" CornerRadius="14" />
+                            </Grid>
                         </Border>
                         <Border x:Name="CoverB" CornerRadius="14" Background="#202024" Opacity="0">
                             <Border.RenderTransform><ScaleTransform x:Name="CoverBScale" ScaleX="0.9" ScaleY="0.9" /></Border.RenderTransform>
+                            <Grid>
+                                <TextBlock Style="{StaticResource ArtPlaceholder}" FontSize="24" />
+                                <Border x:Name="CoverBArt" CornerRadius="14" />
+                            </Grid>
                         </Border>
                     </Grid>
 
                     <Grid Grid.Column="2" MinWidth="0">
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -304,6 +359,30 @@
                                        Text="{Binding Total}" FontFamily="{StaticResource UiFont}" FontSize="10"
                                        Foreground="#B9B9C0" Typography.NumeralAlignment="Tabular" />
                         </Grid>
+
+                        <Grid Grid.Row="3" Margin="0,6,0,0" Height="22">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="ExpandedVolumeButton" Style="{StaticResource TransportButton}"
+                                    Width="26" Height="26" Click="VolumeButton_Click"
+                                    AutomationProperties.Name="Mute or unmute">
+                                <TextBlock x:Name="ExpandedVolumeGlyph" Text="&#xE767;"
+                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" Foreground="White" />
+                            </Button>
+                            <Grid Grid.Column="1" x:Name="ExpandedVolumeTrack" Style="{StaticResource VolumeTrack}"
+                                  Margin="8,0,0,0"
+                                  PreviewMouseLeftButtonDown="ExpandedVolume_Down"
+                                  PreviewMouseMove="ExpandedVolume_Move"
+                                  PreviewMouseLeftButtonUp="ExpandedVolume_Up">
+                                <Border Height="3" CornerRadius="1.5" Background="#3AFFFFFF" VerticalAlignment="Center" />
+                                <Border x:Name="ExpandedVolumeFill" Height="3" CornerRadius="1.5" Width="0"
+                                        HorizontalAlignment="Left" VerticalAlignment="Center"
+                                        Background="{Binding AccentBrush}" />
+                            </Grid>
+                        </Grid>
                     </Grid>
 
                     <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
@@ -318,6 +397,8 @@
                         </Button>
                         <Button Style="{StaticResource TransportButton}" Content="&#xE893;" Command="{Binding NextCommand}"
                                 IsEnabled="{Binding CanNext}" AutomationProperties.Name="Next track" />
+                        <Button Style="{StaticResource TransportButton}" Content="&#xE713;" Click="OptionsButton_Click"
+                                 AutomationProperties.Name="Options" />
                     </StackPanel>
                 </Grid>
             </Grid>

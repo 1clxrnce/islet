@@ -1,11 +1,18 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Windows.Media.Control;
 using Color = System.Windows.Media.Color;
 
 namespace DynamicIslandMusic;
+
+public sealed record MediaSessionInfo(string Id, string Name)
+{
+    public override string ToString() => Name;
+}
 
 public sealed record MediaSnapshot(
     string Title,
@@ -31,17 +38,28 @@ public sealed record MediaSnapshot(
 public sealed class MediaService : IDisposable
 {
     private static readonly Color FallbackAccent = Color.FromArgb(255, 110, 110, 120);
+    private const byte VkMediaNext = 0xB0;
+    private const byte VkMediaPrevious = 0xB1;
+    private const byte VkMediaPlayPause = 0xB3;
+    private const uint KeyUp = 0x0002;
+
+    private sealed record ArtEntry(ImageSource? Art, Color Accent);
 
     private readonly List<GlobalSystemMediaTransportControlsSession> _subscribed = new();
+    private readonly Dictionary<string, ArtEntry> _artCache = new();
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private GlobalSystemMediaTransportControlsSession? _session;
     private GlobalSystemMediaTransportControlsSession? _lastPlaying;
     private string? _artKey;
     private ImageSource? _cachedArt;
     private Color _cachedAccent = FallbackAccent;
+    private int _artLoading;
+    private DateTimeOffset _artLastTry;
     private long _version;
+    private int _publishing;
     private bool _disposed;
 
+    public string? PreferredSessionId { get; set; }
     public event EventHandler<MediaSnapshot>? StateChanged;
 
     public async Task StartAsync()
@@ -52,6 +70,37 @@ public sealed class MediaService : IDisposable
         SubscribeAll();
         SelectSession();
         await PublishAsync();
+    }
+
+    public void Refresh()
+    {
+        SelectSession();
+        _ = PublishAsync();
+    }
+
+    // Cheap timeline resync for the timer; metadata and art stay cached.
+    public void RefreshTimeline() => _ = PublishAsync();
+
+    public IReadOnlyList<MediaSessionInfo> GetSessionInfos()
+    {
+        var list = new List<MediaSessionInfo>();
+        if (_manager is null) return list;
+        foreach (var session in _manager.GetSessions())
+        {
+            string id = session.SourceAppUserModelId ?? "";
+            list.Add(new MediaSessionInfo(id, FriendlyName(id)));
+        }
+        return list.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string FriendlyName(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return "Unknown app";
+        int bang = id.IndexOf('!');
+        string name = (bang >= 0 ? id[(bang + 1)..] : id).Replace('_', ' ').Trim();
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1 && parts[^1].Length >= 10) name = string.Join(' ', parts[..^1]);
+        return name.Length == 0 ? id : name;
     }
 
     private void SubscribeAll()
@@ -82,18 +131,27 @@ public sealed class MediaService : IDisposable
         _ = PublishAsync();
     }
 
-    // Prefer the session actually playing, then the last one that played, then the manager's pick.
+    // Pinned source first, then the session actually playing, then the last one that played.
     private void SelectSession()
     {
         if (_manager is null) return;
 
         var sessions = _manager.GetSessions();
+        var pinned = string.IsNullOrEmpty(PreferredSessionId)
+            ? null
+            : sessions.FirstOrDefault(s => s.SourceAppUserModelId == PreferredSessionId);
         var playing = sessions.FirstOrDefault(s =>
             s.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing);
         if (playing is not null) _lastPlaying = playing;
 
-        var next = playing
-                   ?? (_lastPlaying is not null && sessions.Contains(_lastPlaying) ? _lastPlaying : null)
+        // GetSessions() can hand out a new wrapper for the same app, so match by id.
+        var previous = _lastPlaying is null
+            ? null
+            : sessions.FirstOrDefault(s => s.SourceAppUserModelId == _lastPlaying.SourceAppUserModelId);
+
+        var next = pinned
+                   ?? playing
+                   ?? previous
                    ?? _manager.GetCurrentSession();
         Attach(next);
     }
@@ -109,8 +167,18 @@ public sealed class MediaService : IDisposable
             _session.TimelinePropertiesChanged -= OnSessionChanged;
         }
 
+        // GetSessions() can return a fresh wrapper for the same app. That is not a new
+        // track, so keep the cached art instead of reloading it on every manager event.
+        bool sameApp = _session is not null && session is not null
+                       && _session.SourceAppUserModelId == session.SourceAppUserModelId;
+
         _session = session;
-        _artKey = null;
+        if (!sameApp)
+        {
+            _artKey = null;
+            _cachedArt = null;
+            _cachedAccent = FallbackAccent;
+        }
 
         if (_session is not null)
         {
@@ -125,7 +193,13 @@ public sealed class MediaService : IDisposable
 
     private async Task PublishAsync()
     {
-        if (_disposed) return;
+        if (_disposed || Interlocked.Exchange(ref _publishing, 1) == 1) return;
+        try { await PublishCoreAsync(); }
+        finally { Volatile.Write(ref _publishing, 0); }
+    }
+
+    private async Task PublishCoreAsync()
+    {
         long version = Interlocked.Increment(ref _version);
 
         string title = "";
@@ -185,37 +259,32 @@ public sealed class MediaService : IDisposable
                 var props = await session.TryGetMediaPropertiesAsync();
                 if (props is not null)
                 {
-                    title = props.Title ?? "";
-                    artist = props.Artist ?? "";
-
+                    (title, artist) = CleanInfo(props.Title ?? "", props.Artist ?? "");
                     string key = title + "\u0000" + artist;
                     if (key != _artKey)
                     {
                         _artKey = key;
-                        _cachedArt = null;
-                        if (props.Thumbnail is not null)
+                        _artLastTry = DateTimeOffset.MinValue;
+                        if (_artCache.TryGetValue(key, out var cached))
                         {
-                            using var stream = await props.Thumbnail.OpenReadAsync();
-                            var bitmap = new BitmapImage();
-                            bitmap.BeginInit();
-                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmap.StreamSource = stream.AsStream();
-                            bitmap.EndInit();
-                            bitmap.Freeze();
-                            _cachedArt = bitmap;
-                            _cachedAccent = ExtractAccent(bitmap);
+                            _cachedArt = cached.Art;
+                            _cachedAccent = cached.Accent;
                         }
                         else
                         {
+                            _cachedArt = null;
                             _cachedAccent = FallbackAccent;
                         }
                     }
+                    // The thumbnail can arrive seconds after the metadata on browser sessions.
+                    if (_cachedArt is null && DateTimeOffset.UtcNow - _artLastTry > TimeSpan.FromSeconds(1))
+                        _ = LoadArtAsync(session, key);
                     accent = _cachedAccent;
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Media art/metadata failed: {ex.Message}");
+                Debug.WriteLine($"Media metadata failed: {ex.Message}");
                 accent = _cachedAccent;
             }
         }
@@ -229,33 +298,125 @@ public sealed class MediaService : IDisposable
         }
     }
 
+    private async Task LoadArtAsync(GlobalSystemMediaTransportControlsSession session, string key)
+    {
+        if (_disposed || _artKey != key || Interlocked.Exchange(ref _artLoading, 1) == 1) return;
+        _artLastTry = DateTimeOffset.UtcNow;
+        try
+        {
+            var props = await session.TryGetMediaPropertiesAsync();
+            var thumbnail = props?.Thumbnail;
+            if (thumbnail is not null)
+            {
+                using var stream = await thumbnail.OpenReadAsync();
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.StreamSource = stream.AsStream();
+                bitmap.EndInit();
+                bitmap.Freeze();
+
+                var accent = ExtractAccent(bitmap);
+                if (_artCache.Count > 80) _artCache.Clear();
+                _artCache[key] = new ArtEntry(bitmap, accent);
+                if (!_disposed && _artKey == key)
+                {
+                    _cachedArt = bitmap;
+                    _cachedAccent = accent;
+                    _ = PublishAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Album art failed: {ex.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _artLoading, 0);
+        }
+    }
+
+    private static (string Title, string Artist) CleanInfo(string title, string artist)
+    {
+        title = title.Trim();
+        artist = Regex.Replace(artist.Trim(), @"\s+-\s+Topic\s*$", "", RegexOptions.IgnoreCase).Trim();
+
+        if (artist.Length == 0)
+        {
+            int split = title.IndexOf(" - ", StringComparison.Ordinal);
+            if (split > 0 && split < title.Length - 3)
+            {
+                artist = title[..split].Trim();
+                title = title[(split + 3)..].Trim();
+            }
+        }
+        return (title, artist);
+    }
+
+    // Each press resolves the session again: the previous one may have closed or changed.
+    private GlobalSystemMediaTransportControlsSession? CurrentSession()
+    {
+        try { SelectSession(); }
+        catch (Exception ex) { Debug.WriteLine($"Session lookup failed: {ex.Message}"); }
+        return _session;
+    }
+
     public async Task PlayPauseAsync()
     {
-        var session = _session;
-        if (session is null) return;
+        var session = CurrentSession();
+        if (session is null)
+        {
+            SendMediaKey(VkMediaPlayPause);
+            return;
+        }
 
-        bool ok = await session.TryTogglePlayPauseAsync();
-        Debug.WriteLine(ok ? "Play/pause accepted" : "Play/pause refused by app");
+        bool ok = false;
+        try { ok = await session.TryTogglePlayPauseAsync(); }
+        catch (Exception ex) { Debug.WriteLine($"Play/pause failed: {ex.Message}"); }
+
+        if (!ok) SendMediaKey(VkMediaPlayPause);
+        RefreshTimeline();
     }
 
     public async Task PreviousAsync()
     {
-        var session = _session;
-        if (session is null || session.GetPlaybackInfo()?.Controls.IsPreviousEnabled == false) return;
-        bool ok = await session.TrySkipPreviousAsync();
-        Debug.WriteLine(ok ? "Previous accepted" : "Previous refused by app");
+        var session = CurrentSession();
+        if (session is null)
+        {
+            SendMediaKey(VkMediaPrevious);
+            return;
+        }
+
+        bool ok = false;
+        try { ok = await session.TrySkipPreviousAsync(); }
+        catch (Exception ex) { Debug.WriteLine($"Previous failed: {ex.Message}"); }
+
+        // Do not return early on a disabled flag: many apps report it but still accept keys.
+        if (!ok) SendMediaKey(VkMediaPrevious);
+        RefreshTimeline();
     }
 
     public async Task NextAsync()
     {
-        var session = _session;
-        if (session is null || session.GetPlaybackInfo()?.Controls.IsNextEnabled == false) return;
-        bool ok = await session.TrySkipNextAsync();
-        Debug.WriteLine(ok ? "Next accepted" : "Next refused by app");
+        var session = CurrentSession();
+        if (session is null)
+        {
+            SendMediaKey(VkMediaNext);
+            return;
+        }
+
+        bool ok = false;
+        try { ok = await session.TrySkipNextAsync(); }
+        catch (Exception ex) { Debug.WriteLine($"Next failed: {ex.Message}"); }
+
+        if (!ok) SendMediaKey(VkMediaNext);
+        RefreshTimeline();
     }
 
     public async Task SeekAsync(TimeSpan absolutePosition)
     {
+        SelectSession();
         var session = _session;
         if (session is null || session.GetPlaybackInfo()?.Controls.IsPlaybackPositionEnabled == false) return;
 
@@ -270,6 +431,12 @@ public sealed class MediaService : IDisposable
         bool ok = await session.TryChangePlaybackPositionAsync(absolutePosition.Ticks);
         Debug.WriteLine(ok ? "Seek accepted" : "Seek refused by app");
         _ = PublishAsync();
+    }
+
+    private static void SendMediaKey(byte key)
+    {
+        keybd_event(key, 0, 0, UIntPtr.Zero);
+        keybd_event(key, 0, KeyUp, UIntPtr.Zero);
     }
 
     private static Color ExtractAccent(BitmapSource source)
@@ -298,7 +465,8 @@ public sealed class MediaService : IDisposable
 
         if (buckets.Count == 0) return FallbackAccent;
         int best = 0;
-        foreach (var pair in buckets) if (pair.Value > buckets[best]) best = pair.Key;
+        int bestCount = -1;
+        foreach (var pair in buckets) if (pair.Value > bestCount) { bestCount = pair.Value; best = pair.Key; }
         return Color.FromArgb(255,
             (byte)(((best >> 6) & 7) * 36 + 18),
             (byte)(((best >> 3) & 7) * 36 + 18),
@@ -319,4 +487,7 @@ public sealed class MediaService : IDisposable
             session.PlaybackInfoChanged -= OnAnySessionChanged;
         _subscribed.Clear();
     }
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte virtualKey, byte scan, uint flags, UIntPtr extraInfo);
 }
