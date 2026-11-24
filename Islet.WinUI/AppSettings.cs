@@ -63,7 +63,12 @@ public sealed class AppSettings
 
     // Our Reduce motion setting, or Windows' own "Animation effects" switched off.
     [JsonIgnore]
-    public bool MotionReduced => ReduceMotion || !WindowsAnimationsEnabled();
+    public bool MotionReduced =>
+#if DEBUG
+        // Debug builds only: ISLET_FORCE_MOTION=1 shows animations even with reduce motion on, for testing.
+        Environment.GetEnvironmentVariable("ISLET_FORCE_MOTION") is null &&
+#endif
+        (ReduceMotion || !WindowsAnimationsEnabled());
 
     private static Windows.UI.ViewManagement.UISettings? _uiSettings;
 

@@ -8,6 +8,7 @@ public partial class App : Application
 
     private TrayIcon? _tray;
     private TestWindow? _testWindow;
+    private IslandWindow? _island;
     private bool _exiting;
 
     public App()
@@ -45,7 +46,15 @@ public partial class App : Application
             ViewModel = new MainViewModel();
             _ = InitializeMediaAsync(ViewModel);
         });
-        Log.Step("Test window", ShowTestWindow);
+        Log.Step("Island window", () =>
+        {
+            if (ViewModel is null) return;
+            _island = new IslandWindow(ViewModel);
+            _island.ShowIsland();
+#if DEBUG
+            if (Environment.GetEnvironmentVariable("ISLET_DEMO") is not null) _island.ShowDemo();
+#endif
+        });
     }
 
     private static async Task InitializeMediaAsync(MainViewModel viewModel)
@@ -81,9 +90,10 @@ public partial class App : Application
         _exiting = true;
         Log.Trace("Exiting");
         Log.Step("Tray removed", () => _tray?.Dispose());
+        Log.Step("Island closed", () => _island?.Close());
+        _testWindow?.Close();
         Log.Step("Services stopped", () => ViewModel?.Dispose());
         Log.Step("Settings saved", AppSettings.Save);
-        _testWindow?.Close();
         Exit();
     }
 }
