@@ -36,6 +36,9 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         Log.Trace($"Starting islet {typeof(App).Assembly.GetName().Version}", fresh: true);
+        // islet never takes focus. A newly started app may grab the foreground, and WinUI's hidden helper
+        // window would take it from whatever the user is doing; lock that out for the whole startup.
+        Native.LockSetForegroundWindow(Native.LsfwLock);
 
         // Each step is wrapped: one failure is logged and the rest still start.
         Log.Step("Settings loaded", AppSettings.Load);
@@ -55,6 +58,13 @@ public partial class App : Application
             if (Environment.GetEnvironmentVariable("ISLET_DEMO") is not null) _island.ShowDemo();
 #endif
         });
+
+        // Unlocked once startup has settled, so the tray menu and Settings can come to the front later.
+        var unlock = Ui.Queue!.CreateTimer();
+        unlock.Interval = TimeSpan.FromSeconds(2);
+        unlock.IsRepeating = false;
+        unlock.Tick += (_, _) => Native.LockSetForegroundWindow(Native.LsfwUnlock);
+        unlock.Start();
     }
 
     private static async Task InitializeMediaAsync(MainViewModel viewModel)

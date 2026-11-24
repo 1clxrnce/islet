@@ -226,16 +226,49 @@ public sealed partial class IslandWindow : WindowEx
     private const uint WmDpiChanged = 0x02E0;
     private const uint WmSettingChange = 0x001A; // Taskbar or work area changes
 
+    private const uint WmStyleChanging = 0x007C;
+    private const uint WmMouseActivate = 0x0021;
+    private const int MaNoActivate = 3;
     private const uint WmNcCalcSize = 0x0083;
+    private const uint WmNcPaint = 0x0085;
+    private const uint WmNcActivate = 0x0086;
+    private const uint WmNcUahDrawCaption = 0x00AE; // Undocumented: themed caption painting
+    private const uint WmNcUahDrawFrame = 0x00AF;   // Undocumented: themed frame painting
 
+    // The island must never show a window frame. The presenter keeps a dialog frame style that
+    // Windows repaints (as a small title bar) whenever a style changes, e.g. when click-through
+    // toggles. So: no frame area, no frame painting, and frame styles stripped whenever set.
     private void OnWindowMessage(object? sender, WinUIEx.Messaging.WindowMessageEventArgs e)
     {
         uint id = e.Message.MessageId;
         if (id == WmNcCalcSize && e.Message.WParam != 0)
         {
-            // The whole window is client area: Windows has no frame left to draw (no 1 px edge).
+            // The whole window is client area: Windows has no frame left to draw.
             e.Result = 0;
             e.Handled = true;
+        }
+        else if (id is WmNcPaint or WmNcUahDrawCaption or WmNcUahDrawFrame)
+        {
+            e.Result = 0;
+            e.Handled = true;
+        }
+        else if (id == WmMouseActivate)
+        {
+            e.Result = MaNoActivate; // A click on the pill must never take focus from the app in front.
+            e.Handled = true;
+        }
+        else if (id == WmNcActivate)
+        {
+            e.Result = 1; // "Done" without letting Windows draw an active or inactive caption.
+            e.Handled = true;
+        }
+        else if (id == WmStyleChanging && (int)e.Message.WParam == Native.GwlStyle && e.Message.LParam != 0)
+        {
+            // STYLESTRUCT { styleOld, styleNew }: drop the frame from whatever style is being set.
+            IntPtr change = (IntPtr)e.Message.LParam;
+            uint styleNew = (uint)System.Runtime.InteropServices.Marshal.ReadInt32(change, 4);
+            uint stripped = (uint)((styleNew & ~Native.FrameStyles) | Native.WsPopup);
+            if (stripped != styleNew) System.Runtime.InteropServices.Marshal.WriteInt32(change, 4, unchecked((int)stripped));
         }
         // Monitors added, removed, rearranged or rescaled: place the island again.
         else if (id is WmDisplayChange or WmDpiChanged or WmSettingChange)

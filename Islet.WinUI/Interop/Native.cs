@@ -62,6 +62,12 @@ internal static class Native
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
+    public const uint LsfwLock = 1;
+    public const uint LsfwUnlock = 2;
+
+    [DllImport("user32.dll")]
+    public static extern bool LockSetForegroundWindow(uint lockCode);
+
     [DllImport("user32.dll")]
     public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint key, byte alpha, uint flags);
 
